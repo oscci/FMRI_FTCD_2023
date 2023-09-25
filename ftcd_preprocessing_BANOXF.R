@@ -132,8 +132,7 @@ nsubj <- length(mydf$Gorilla_ID)
 
 startsub <-1
 endsub <- nsubj
-startsub <- 21
-endsub <-23
+
 for (mysub in startsub:endsub){
   mysubname <- mydf$Gorilla_ID[mysub]
   cat(paste0(mysubname),"\n")
