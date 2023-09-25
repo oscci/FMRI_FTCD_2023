@@ -7,6 +7,16 @@
 # Interaction only used when checking, but allows for plots etc.
 
 ########################################################
+#When you use settings to look at output (see lines 85-95), this program waits for input from user.
+# In this case, it only runs properly if you run from source, which can be done using Ctrl+Shift+S.
+#------------------------------------------------------------------------------------------
+#You can run several files through a loop. But the program is not crashproof,
+#and will crash if it encounters odd files. When this happens, make sure you run the last 2
+#lines to ensure you save the results from files that run successfully.
+#The program also gives the opportunity to comment on any features of files that are notable
+#as you go through, by typing in the console. These comments will be stored in the xls file;
+#You can also add comments there manually.
+
 # Install packages
 
 require(readxl) 
@@ -74,12 +84,12 @@ for (t in 1:6){
 ########################################################
 # You can change these settings to vary what output you see during the analysis
 # Feel free to change these WITHOUT pushing the changes to github
-checkmarkers=0; #set to 1 to see a sample of the file to check markers are there
-initialdatacheck=0; #set to 1 to view raw data for each epoch
+checkmarkers=1; #set to 1 to see a sample of the file to check markers are there
+initialdatacheck=1; #set to 1 to view raw data for each epoch
 initialdatacheck1=0; # set to 1 to view epochs after normalisation
 initialdatacheck2=0; #set to 1 to view epochs after heartbeat Correction
 initialdatacheck3=0; # set to 1 to visualise after baseline correction
-initialdatacheck4=0; # set to 1 to plot an average for each subject
+initialdatacheck4=1; # set to 1 to plot an average for each subject
 ########################################################
 
 # Timings in secs
@@ -120,8 +130,10 @@ ntasks <- length(tasks)
 
 nsubj <- length(mydf$Gorilla_ID)
 
-startsub <-17
-endsub <- 17
+startsub <-1
+endsub <- nsubj
+startsub <- 21
+endsub <-23
 for (mysub in startsub:endsub){
   mysubname <- mydf$Gorilla_ID[mysub]
   cat(paste0(mysubname),"\n")
