@@ -70,7 +70,7 @@ if(!file.exists(plotdir)){dir.create(plotdir)}
 
 mydf$Gorilla_ID<-as.character(mydf$Gorilla_ID) # unfactor these columns to avoid later difficulties
 factor_cols <- c('Comment', 'nMark','nSpike','nExtreme','N','peak_LI','peak_latency','peak_se',
-'peal_laterality','peak_odd','peak_even','mean_LI','mean_se','mean_laterality', 'mean_odd','mean_even','exclude')
+'peak_laterality','peak_odd','peak_even','mean_LI','mean_se','mean_laterality', 'mean_odd','mean_even','exclude')
 mycolnum<-which(names(mydf)=='F18')
 for (t in 1:6){
   for (col in 1: length(factor_cols)){
@@ -358,10 +358,10 @@ for (mysub in startsub:endsub){
           #then overplot the corrected values in different colours
           lines(timeline+premarker,myepoched[mym,,1,1],col='pink')
           lines(timeline+premarker,myepoched[mym,,2,1],col='lightblue')
-          abline(v=basestart)
-          abline(v=baseend)
-          abline(v=poistart)
-          abline(v=poiend)
+          abline(v = poistart, lty = 2, col = 'green')
+          abline(v = poiend, lty = 2, col = 'green')
+          abline(v = basestart, lty = 2)
+          abline(v = baseend, lty = 2)
           
           mytitle=paste(mysubname, 'Trial:', mym,'Include = ',myinclude[mym])
           title(mytitle)
