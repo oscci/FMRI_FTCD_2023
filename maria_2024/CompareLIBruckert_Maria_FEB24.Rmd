@@ -1,0 +1,486 @@
+---
+title: "CompareLIs"
+author: "Dorothy Bishop"
+date: "2023-05-13"
+output: html_document
+---
+
+18/5/23
+updated after adding 95% CI for weighted LI mean
+20/5/23
+updated to read in the big LI file: li_toolbox_all_tasks_masks_LB.csv
+This has 5 and 95% CI
+31/5/23
+Modified to cope with corrected MCA data, now with binarised mask. NB the raw data files for both toolbox and diff method have been corrected.
+7/7/23
+To rerun with new outputs from mirror.m and li.m that use 2.5 and 97.5 percentiles
+9/3/24
+Adjusted for Maria COLA data
+
+NB: FILE LOCATIONS
+When you run here(), the default directory for reading and writing becomes the project folder. I have put the raw data files in a folder called maria_2024 within that folder.
+
+If you have other locations, you could set a directory name and then substitute that for cases where you see 'here(maria_2024/' at start of file read
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(here)
+require(janitor) #clean up names from external files
+require(ggpubr)
+require(RVAideMemoire) #for CI for Spearman r
+```
+
+## Data from fMRI
+
+6 tasks: Word Generation, Sentence Generation, Phonological Decision, Semantic Comprehension, Word Comprehension, Syntactic Decision (the 'comprehension' tasks also referred to as decision tasks in writeups)
+
+Note from MS: "no participant BAN17 data in the GAM_summary.csv document (their Doppler data was rejected in the GAM analysis), but you will still see their data for the Wilke toolbox and the mirror method (in the files LIs_Wilke_toolbox.csv and flip_allmasks_tasks_feb2024.csv. Their data is omitted in the comparison between fTCD and fMRI when using the script.
+
+Participant OXF13 did not perform the WC task in fMRI. 
+We had originally 24 participants in Bangor and 27 in Oxford, without one that was rejected from Bangor data, the final sample size is 50. 
+
+
+```{r readdata}
+demog <- read.csv(here("Maria_2024/GAM_summary.csv"))
+# we'll use this just for demographics, handedness etc
+
+# Read in data processed with li.m
+allLI <- read.csv(here("Maria_2024/LIs_Wilke_toolbox.csv"))
+allLI <- clean_names(allLI) #from janitor package - names more uniform
+
+#need to get an id that will be the same for all files
+
+allLI$id <- substr(allLI$input_image,1,5) #just first 3 chars
+idlist <-unique(allLI$id) #complete list of ids - will use later for matching up
+
+#need to code task: this is buried in input_image
+allLI$task <- NA
+taskID <- c('WG_tstat1','SG_tstat1','PD_tstat1','WC_tstat1','SC_tstat1','SD_tstat1')
+task <- c('WG','SG','PD','WC','SC','SD')
+
+for (t in 1:length(task)){
+  w<-which(grepl(taskID[t],allLI$input_image)==TRUE)
+  allLI$task[w] <-task[t]
+}
+
+#now create col for mask
+mask <- c('mca','frontal','temporal','parietal')
+allLI$mask <- NA
+for (m in 1:length(mask)){
+  maskname <- mask[m]
+  w<-which(grepl(maskname,allLI$inclusive_mask)==TRUE) #find rows with this name
+  allLI$mask[w] <-maskname
+}
+
+#Now read in mirror files
+
+allmirror <- read.csv(here("Maria_2024/flip_allmasks_tasks_feb2024.csv"))
+allmirror<-clean_names(allmirror) #this does some odd things to some names but we will fix later!
+allmirror$filename <- allmirror$id
+#find the id in the filename
+allmirror$id <-NA #initialise
+for (i in 1:length(idlist)){
+  id <- idlist[i]
+  w<-which(grepl(id,allmirror$filename)==TRUE) #find rows with this id in filename
+  allmirror$id[w] <-id
+}
+
+for (t in 1:length(task)){
+  w<-which(grepl(taskID[t],allmirror$filename)==TRUE)
+  allmirror$task[w] <-task[t]
+}
+
+#Now find the GAM values for doppler
+#We have 6 tasks: WG,SG,PD,WC,SC,SD
+WG_LI <- read.csv(here("maria_2024/GAM_Summary_WG.csv"))
+SG_LI <- read.csv(here("maria_2024/GAM_Summary_SG.csv"))
+PD_LI <- read.csv(here("maria_2024/GAM_Summary_PD.csv"))
+WC_LI <- read.csv(here("maria_2024/GAM_Summary_WC.csv"))
+SC_LI <- read.csv(here("maria_2024/GAM_Summary_SC.csv"))
+SD_LI <- read.csv(here("maria_2024/GAM_Summary_SD.csv"))
+WG_LI$C_lowCI <- WG_LI$LI.est-1.96*WG_LI$LIest.se
+WG_LI$C_hiCI <- WG_LI$LI.est+1.96*WG_LI$LIest.se
+SG_LI$C_lowCI <- SG_LI$LI.est-1.96*SG_LI$LIest.se
+SG_LI$C_hiCI <- SG_LI$LI.est+1.96*SG_LI$LIest.se
+PD_LI$C_lowCI <- PD_LI$LI.est-1.96*PD_LI$LIest.se
+PD_LI$C_hiCI <- PD_LI$LI.est+1.96*PD_LI$LIest.se
+WC_LI$C_lowCI <- WC_LI$LI.est-1.96*WC_LI$LIest.se
+WC_LI$C_hiCI <- WC_LI$LI.est+1.96*WC_LI$LIest.se
+SC_LI$C_lowCI <- SC_LI$LI.est-1.96*SC_LI$LIest.se
+SC_LI$C_hiCI <- SC_LI$LI.est+1.96*SC_LI$LIest.se
+SD_LI$C_lowCI <- SD_LI$LI.est-1.96*SD_LI$LIest.se
+SD_LI$C_hiCI <- SD_LI$LI.est+1.96*SD_LI$LIest.se
+```
+
+#scale the doppler values by dividing by 6, and the mirror diff values by dividing by 2.7.
+#these values determined by looking at max values
+#Aim to bring into range with the LIs with scale from -1 to 1
+
+#We will then make a big dataframe with all the data from doppler and fmri bolted together, with columns for id, method, mask, task,LI, lowCI, highCI
+
+
+```{r makebigdf}
+demog$id <- substr(demog$ID,1,5) #again, we can use first 3 digits of ID to uniquely identify participants
+
+#Long form with methods, tasks, masks all stacked
+
+bigdf <- allmirror[,c('id','meanvol_l','meanvol_r','meandiff','diff_low_ci','diff_hi_ci','mask','task')]
+names(bigdf)[c(4,5,6)]<-c('mean','lowCI','hiCI') #these are mean and CI for lat index
+#scale mirror values by dividing by 2.7 (maximum val for hi CI is 2.689)
+bigdf[,4:6]<-bigdf[,4:6]/2.7
+bigdf$method <- 'mirror'
+
+
+#NOW add data from toolbox
+
+#cols for var weighting and clustering just used here as padding for columns with mean L and R activation - will be renamed
+addbit<-allLI[,c('id','variance_weighting','clustering','wm_li','wm_low_ci','wm_high_ci','mask','task')]
+addbit$method='toolbox'
+addbit[,2:3]<-NA
+names(addbit)<-names(bigdf)
+bigdf<-rbind(bigdf,addbit)
+
+
+#Now add Doppler - 6 tasks- use NExtreme, nFinal,odd and even for padding
+#'Filename','nExtreme','nFinal','C_LI.est','C_lowCI','C_hiCI','odd','even'
+
+dopbit1 <- WG_LI[,c('ID','nExtreme','nFinal','LI.est','C_lowCI','C_hiCI','odd','even')]
+dopbit1$even <- 'WG'
+
+dopbit2 <- SG_LI[,c('ID','nExtreme','nFinal','LI.est','C_lowCI','C_hiCI','odd','even')]
+dopbit2$even <- 'SG'
+
+
+dopbit3 <- PD_LI[,c('ID','nExtreme','nFinal','LI.est','C_lowCI','C_hiCI','odd','even')]
+dopbit3$even <- 'PD'
+
+
+dopbit4 <- WC_LI[,c('ID','nExtreme','nFinal','LI.est','C_lowCI','C_hiCI','odd','even')]
+dopbit4$even <- 'WC'
+
+
+dopbit5<- SC_LI[,c('ID','nExtreme','nFinal','LI.est','C_lowCI','C_hiCI','odd','even')]
+dopbit5$even <- 'SC'
+
+
+dopbit6<- SD_LI[,c('ID','nExtreme','nFinal','LI.est','C_lowCI','C_hiCI','odd','even')]
+dopbit6$even <- 'SD'
+
+dopbit <- rbind(dopbit1,dopbit2,dopbit3,dopbit4,dopbit5,dopbit6)
+
+dopbit$method <- 'Doppler'
+names(dopbit) <- names(bigdf)
+dopbit$id <- substr(dopbit$id,1,5)
+dopbit[,2:3]<-NA
+dopbit$mask <- 'mca'
+
+#Scale doppler by dividing by 6
+w<-which(names(dopbit)=='mean')
+dopbit[,w:(w+2)]<-dopbit[,w:(w+2)]/6
+
+#now exclude those who did not do fMRI
+w<-which(dopbit$id %in% bigdf$id)
+bigdf<- rbind(bigdf,dopbit[w,])
+
+bigdf$hand <- NA
+bigdf$lat_group <- NA
+
+for (i in 1:nrow(demog)){
+  w<-which(bigdf$id==demog$id[i])
+  bigdf$hand[w]<-demog$hand_self_report[i]
+  bigdf$lat_group[w]<-demog$group_lat[i]
+}
+
+#We include a colour code that can be used later in plotting
+bigdf$nonRH <- 1
+bigdf$handcolour <- 'blue'
+bigdf$nonRH[bigdf$hand=="R"] <- 0
+bigdf$handcolour[bigdf$hand=="R"]  <-'red' #Red for right-handed
+
+
+#NB so far the lat_group is Lisa's original grouping
+#Here I will add a new lat_group based on whether this measures CI crossed zero
+
+bigdf$nulatgroup <- 'B'
+bigdf$nulatgroup[bigdf$lowCI<0 & bigdf$hiCI<0 ] <- 'R'
+bigdf$nulatgroup[bigdf$lowCI>0 & bigdf$hiCI>0 ] <- 'L'
+
+#We also want a new DopLatGroup specific to task, where the task has been given
+#Just two tasks: PP1 and WG1. This is just used with LvsR plots so just record this for the mirror method, where
+#we have the voxel mean vols
+bigdf$Doplat<-NA
+for (tt in c('WG','SG','PD','WC','SC','SD')){
+  myf <- filter(bigdf,bigdf$method=='Doppler',bigdf$task==tt)
+  for (n in 1:nrow(myf)){
+    w<-intersect(which(bigdf$id==myf$id[n]), which(bigdf$task==tt))
+    bigdf$Doplat[w]<-myf$nulatgroup[n]
+  }
+  
+}
+write.csv(bigdf,here('maria_2024/bigdf_tstat1.csv'))
+
+```
+
+
+Now we can look at some plots - start within task
+
+```{r tryplot}
+tryplot <- 1 #this flag can be set to zero so we can skip this step if need be
+if (tryplot==1){
+ 
+#remove BAN17 as missing data create issues
+  bigdf_all<-bigdf #save original
+ # bigdf<-bigdf[bigdf$id!='BAN17',] #now remove BAN17 who has missing data that messes up plots
+
+#method options are "Doppler","mirror","toolbox" 
+mymethod <- c('Doppler','mirror','toolbox')
+#we select these by specifying 1, 2 or 3
+methX <- 1
+methY <- 2
+methodX <- mymethod[methX]
+methodY <- mymethod[methY]
+methodlabel <- c('Doppler - rescaled','mirror - rescaled','LI toolbox')
+
+allplot <- list() #we'll save the plots in a list so we can flexibly reference them later with ggarrange
+mycount <-0
+for (thismask in 1){
+#for (thismask in 1:3){
+mymask <- 'mca'
+
+tlist <- 1:6 # tasks to include: WG,SG,PD,WC,SC,SD
+for (t in tlist){
+mycount <- mycount+1
+mytask <- task[t]
+xfile <- filter(bigdf,method==methodX & task==mytask & mask==mymask)
+yfile <-  filter(bigdf,method==methodY & task==mytask & mask==mymask)
+#Check that rows are equivalent
+s<-c(xfile$id,yfile$id)
+myn<-table(s)
+my2 <- names(which(myn==2))
+xfile<-xfile[xfile$id %in% my2,]
+yfile <- yfile[yfile$id %in% my2,]
+w<-which(names(xfile)=='mean')
+names(xfile)[w:(w+2)]<-c('x','xmin','xmax')
+names(yfile)[w:(w+2)]<-c('y','ymin','ymax')
+
+forplot<-cbind(xfile,yfile[,w:(w+2)]) #bind x and y columns to make file for plotting
+
+correlcoef <- round(cor.test (forplot$x, forplot$y, method = "spearman",  exact = FALSE)$estimate,3)
+
+corspear <-spearman.ci(forplot$x,forplot$y, nrep = 1000, conf.level = 0.95)
+#correlcoef <- paste0('$r_s$ = ',correlcoef,' [',round(corspear$conf.int[1],3),', ',round(corspear$conf.int[2],3),']')
+text3 <-paste0('Spearman r: \n',correlcoef,' [',round(corspear$conf.int[1],3),', ',round(corspear$conf.int[2],3),']')
+
+forplot$colgroup= forplot$Doplat #assign for lat_group for colour contrast
+if(methX>1 && methY>1){forplot$colgroup <- "1"} #no col contrast if only fMRI (needs to be nonnumeric!)
+
+#out of range CIs mess up plot - set to limits
+forplot$xmin[forplot$xmin< (-1)]<- (-1)
+forplot$ymin[forplot$ymin< (-1)]<- (-1)
+forplot$xmax[forplot$xmax>1]<- 1
+forplot$ymax[forplot$ymax>1]<- 1
+
+myplot <- ggplot(data = forplot,aes(x = x,y = y)) + 
+  geom_point(aes(col=colgroup),size=.5)+
+  geom_errorbar(aes(ymin = ymin,ymax = ymax,col=colgroup)) + 
+  geom_errorbarh(aes(xmin = xmin,xmax = xmax,col=colgroup))+
+  geom_hline(yintercept = 0, linetype="solid",col='grey') + 
+  geom_vline(xintercept = 0, linetype= "solid", col='grey')  + 
+  xlab(methodlabel[methX])+
+  ylab(methodlabel[methY])+
+  lims(x= c(-1,1), y = c(-1,1))+
+  ggtitle(paste0(mymask,": ",mytask))+
+  annotate("text",x = -.5, y = .9, label = text3,col='black',size=3)+
+   theme(legend.position = "none")
+
+mylegend=FALSE
+if(methX==1 || methY==1){
+myplot <- myplot +
+  guides(col=guide_legend(title='Laterality category: fTCD WG'))
+  mylegend=TRUE
+}
+
+if(methX>1 && methY>1){
+myplot <- myplot +
+   scale_color_manual(values = "blue") #just use blue points if plotting only fMRI
+}
+
+allplot[[mycount]] <- myplot
+}
+if(length(allplot)==3){
+myallplot <- ggarrange(allplot[[1]],allplot[[3]],allplot[[2]],ncol=3,nrow=1,common.legend=mylegend)
+savename<-paste0(methodX,'_',methodY,'_3tasks_',mymask,'.jpg')
+}
+if(length(allplot)==2){
+myallplot <- ggarrange(allplot[[1]],allplot[[2]],ncol=2,nrow=1,common.legend=mylegend)
+savename<-paste0(methodX,'_',methodY,'_2tasks_',mymask,'.jpg')
+}
+if(length(allplot)==6){
+myallplot <- ggarrange(allplot[[1]],allplot[[2]],allplot[[3]],allplot[[4]],allplot[[5]],allplot[[6]],ncol=2,nrow=3,common.legend=mylegend)
+savename<-paste0(methodX,'_',methodY,'_6tasks_',mymask,'.jpg')
+}
+ggsave(here('maria_2024/Plots',savename),myallplot,width=8,height=9,dpi=300)
+}
+
+}
+```
+
+
+```{r LRplot}
+LRplot <- 0
+if(LRplot==1){
+#column with 'diff'
+masktitle <- c('mca','frontal','temporal','parietal','cerebellar')
+tasktitle <- c('WG','SG','PD','WC','SC','SD')
+methodX <- 'mirror'
+mycount <-0
+allplot <- list()
+for (thismask in 1:5){
+mymask <- mask[thismask]
+
+
+for (t in c(1:6)){ #WG, SG, PD, WC, SC, SD
+mycount <- mycount+1
+mytask <- task[t]
+forplot <- filter(bigdf,method==methodX & task==mytask & mask==mymask)
+w<-which(is.na(forplot$Doplat)) #find and remove rows with no Doppler lat
+forplot <- forplot[-w,]
+names(forplot)[2:3]<-c('Left','Right')
+
+
+#correlcoef <- round(cor.test (forplot$Left, forplot$Right, method = "spearman",  exact = FALSE)$estimate,3) #not used
+#censor values at 3
+mycensor <- 3
+forplot$Left[forplot$Left< (-mycensor)]<- (-mycensor)
+forplot$Right[forplot$Right< (-mycensor)]<- (-mycensor)
+ forplot$Left[forplot$Left>mycensor]<- mycensor
+ forplot$Right[forplot$Right>mycensor]<- mycensor
+myplot <- ggplot(data = forplot,aes(x = Right,y = Left)) + 
+  geom_point(aes(col=Doplat),size=1.5)+
+  geom_hline(yintercept = 0, linetype="solid",col='grey') + 
+  geom_vline(xintercept = 0, linetype= "solid", col='grey')  + 
+  geom_abline(intercept=0,slope=1,linetype= "dotted", col='black')+
+  geom_hline(yintercept = mean(forplot$Left[forplot$Doplat=='L']),col='blue',linetype= "dashed")+
+  geom_vline(xintercept = mean(forplot$Right[forplot$Doplat=='L']),col='blue',linetype= "dashed")+
+  xlab("Activation R")+
+  ylab("Activation L")+
+   xlim(-mycensor,mycensor)+
+   ylim(-mycensor,mycensor)+
+  ggtitle(paste0(masktitle[thismask],":\n",tasktitle[t]))+
+  scale_color_manual(values=c( "gray40","blue","red"))+
+  guides(col=guide_legend(title='Laterality category: fTCD'))
+
+
+ 
+allplot[[mycount]] = myplot
+}
+}
+myallplot <- ggarrange(allplot[[1]],allplot[[2]],allplot[[3]],allplot[[4]],allplot[[5]],allplot[[6]],allplot[[7]],allplot[[8]],allplot[[9]], allplot[[10]],ncol=2,nrow=5,common.legend=TRUE)
+savename<-paste0('LR_6tasks_4mask.png')
+ggsave(here('Plots',savename),myallplot,width=6,height=10,dpi=300)
+
+}
+```
+
+```{r plot5regions}
+
+#method options are "Doppler","mirror","toolbox" - now with mirrorLI which is LI from mirror data
+mymethod <- c('Doppler','mirror','toolbox')
+tlist <- c('WG','SG')
+longlist <- c('WG','SG')#
+for (t in 1:length(tlist)){ #new plot started with new task
+mytask <- tlist[t]
+longtask <- longlist[t]
+allplot <- list() #clear list
+mycount <-0
+methX <- 1
+for (methY in 2:3){ #methods 2 and 3 will be compared side by side
+methodX <- mymethod[methX]
+methodY <- mymethod[methY]
+methodlabel <- c('fTCD GAM - rescaled','fMRI: Subtracted - rescaled','fMRI: LI toolbox','LI from mirror')
+
+mytaskx <- mytask
+if(mytaskx=='WG' && methX ==1){mytaskx <- 'SG'}
+
+for (thismask in 1:5){
+mymask <- mask[thismask]
+mytitle <- paste0(str_to_title(mymask),": ",longtask)
+if(thismask==1){
+  mytitle <- paste0(str_to_upper(mymask),": ",longtask)
+}
+
+mycount <- mycount+1 #used to count the plots
+
+xfile <- filter(bigdf,method==methodX & task==mytaskx & mask=='mca') #doppler only has mca equiv and only has pp1 and wg1
+yfile <-  filter(bigdf,method==methodY & task==mytask & mask==mymask)
+
+
+
+#Check that rows are equivalent
+s<-c(xfile$id,yfile$id)
+myn<-table(s)
+my2 <- names(which(myn==2))
+xfile<-xfile[xfile$id %in% my2,]
+yfile <- yfile[yfile$id %in% my2,]
+w<-which(names(xfile)=='mean')
+names(xfile)[w:(w+2)]<-c('x','xmin','xmax')
+names(yfile)[w:(w+2)]<-c('y','ymin','ymax')
+pbilat <- round(100*length(which(yfile$nulatgroup=='B'))/nrow(yfile),0) #% bilat
+forplot<-cbind(xfile,yfile[,w:(w+2)])
+
+corspear <-spearman.ci(forplot$x,forplot$y, nrep = 1000, conf.level = 0.95)
+rs <- round(corspear$estimate,3)
+ci1<-round(corspear$conf.int[1],3)
+ci2<-round(corspear$conf.int[2],3)
+cortext <- paste0('r[s] = ',rs,'\n[',ci1,', ', ci2,']')
+
+#add some text re % bilateral
+
+
+myplot <- ggplot(data = forplot,aes(x = x,y = y)) + 
+  geom_point(aes(col='black'),size=1.5)+
+  geom_errorbar(aes(ymin = ymin,ymax = ymax,col='black')) + 
+  geom_errorbarh(aes(xmin = xmin,xmax = xmax,col='black'))+
+  geom_hline(yintercept = 0, linetype="solid",col='grey') + 
+  geom_vline(xintercept = 0, linetype= "solid", col='grey')  + 
+  xlab(methodlabel[methX])+
+  ylab(methodlabel[methY])+
+  xlim(-1,1)+
+  ylim(-1,1)+
+  ggtitle(mytitle)+
+  annotate("text",x = -.5, y = .9, label = cortext,col='black')+
+  annotate("text",x = 0.65, y = -.85, label = paste0(pbilat,'% bilateral'),col='black')+
+  guides(col=guide_legend(title='Laterality category: fTCD WG'))
+
+allplot[[mycount]] = myplot
+}
+}
+
+myallplot <- ggarrange(allplot[[1]],allplot[[6]],allplot[[2]],allplot[[7]],allplot[[3]],
+                       allplot[[8]],allplot[[4]],allplot[[9]],allplot[[5]],allplot[[10]],nrow=5,ncol=2,common.legend=TRUE)
+savename<-paste0('Doppler_fmri2meth_5masks_',mytask,'.jpg')
+
+ggsave(here('Plots',savename),myallplot,width=8,height=15,dpi=300)
+
+#additional plots for powerpoint
+myplot1 <- ggarrange(allplot[[1]],allplot[[6]],nrow=1,ncol=2,common.legend=TRUE)
+savename<-paste0('Doppler_fmri2meth_MCA_',mytask,'.jpg')
+
+ggsave(here('Plots',savename),myplot1,width=6,height=4,dpi=300)
+
+#additional plots for powerpoint
+myplot2 <- ggarrange(allplot[[2]],allplot[[7]],allplot[[3]],allplot[[8]],nrow=2,ncol=2,common.legend=TRUE)
+savename<-paste0('Doppler_fmri2meth_fronttemp_',mytask,'.jpg')
+
+ggsave(here('Plots',savename),myplot2,width=6,height=6,dpi=300)
+
+myplot3 <- ggarrange(allplot[[4]],allplot[[9]],allplot[[5]],allplot[[10]],nrow=2,ncol=2,common.legend=TRUE)
+savename<-paste0('Doppler_fmri2meth_parcereb_',mytask,'.jpg')
+
+ggsave(here('Plots',savename),myplot3,width=6,height=6,dpi=300)
+}
+
+
+```
+
