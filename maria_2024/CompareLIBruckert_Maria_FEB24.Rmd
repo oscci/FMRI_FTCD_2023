@@ -327,25 +327,33 @@ ggsave(here('maria_2024/Plots',savename),myallplot,width=8,height=9,dpi=300)
 ```
 
 
+Plotting L and R activations from fMRI.
+This allows us to see whether L vs R activation switches for cerebellum. (More L activation is points above the line; more R activation is points below the line).
+Also allows us to see whether there is deactivation in parietal (mean activation below zero).
+
 ```{r LRplot}
-LRplot <- 0
+LRplot <- 1
 if(LRplot==1){
 #column with 'diff'
 masktitle <- c('mca','frontal','temporal','parietal','cerebellar')
+mask<-masktitle
 tasktitle <- c('WG','SG','PD','WC','SC','SD')
 methodX <- 'mirror'
-mycount <-0
-allplot <- list()
+
+#We'll save separately for each mask
 for (thismask in 1:5){
 mymask <- mask[thismask]
-
+mycount <-0
+allplot <- list()
 
 for (t in c(1:6)){ #WG, SG, PD, WC, SC, SD
 mycount <- mycount+1
 mytask <- task[t]
 forplot <- filter(bigdf,method==methodX & task==mytask & mask==mymask)
 w<-which(is.na(forplot$Doplat)) #find and remove rows with no Doppler lat
+if(length(w)>0){
 forplot <- forplot[-w,]
+}
 names(forplot)[2:3]<-c('Left','Right')
 
 
@@ -375,35 +383,37 @@ myplot <- ggplot(data = forplot,aes(x = Right,y = Left)) +
  
 allplot[[mycount]] = myplot
 }
-}
-myallplot <- ggarrange(allplot[[1]],allplot[[2]],allplot[[3]],allplot[[4]],allplot[[5]],allplot[[6]],allplot[[7]],allplot[[8]],allplot[[9]], allplot[[10]],ncol=2,nrow=5,common.legend=TRUE)
-savename<-paste0('LR_6tasks_4mask.png')
-ggsave(here('Plots',savename),myallplot,width=6,height=10,dpi=300)
 
+myallplot <- ggarrange(allplot[[1]],allplot[[2]],allplot[[3]],allplot[[4]],allplot[[5]],allplot[[6]],ncol=2,nrow=3,common.legend=TRUE)
+savename<-paste0('LR_6tasks_',mymask,'.png')
+ggsave(here('maria_2024/Plots',savename),myallplot,width=6,height=10,dpi=300)
+}
 }
 ```
+
+Here we consider how Doppler activation (coded as MCA region) compares with activation in different ROIs for fMRI
 
 ```{r plot5regions}
 
 #method options are "Doppler","mirror","toolbox" - now with mirrorLI which is LI from mirror data
 mymethod <- c('Doppler','mirror','toolbox')
-tlist <- c('WG','SG')
-longlist <- c('WG','SG')#
+
+tlist<- c('WG','SG','PD','WC','SC','SD')
 for (t in 1:length(tlist)){ #new plot started with new task
 mytask <- tlist[t]
-longtask <- longlist[t]
+longtask <- mytask
 allplot <- list() #clear list
 mycount <-0
-methX <- 1
-for (methY in 2:3){ #methods 2 and 3 will be compared side by side
+methX <- 1 #always compare with Doppler
+for (methY in 2){ #methods 2 and 3 will be compared side by side
 methodX <- mymethod[methX]
 methodY <- mymethod[methY]
-methodlabel <- c('fTCD GAM - rescaled','fMRI: Subtracted - rescaled','fMRI: LI toolbox','LI from mirror')
+methodlabel <- c('fTCD GAM - rescaled','LI from mirror','fMRI: LI toolbox')
 
-mytaskx <- mytask
-if(mytaskx=='WG' && methX ==1){mytaskx <- 'SG'}
 
-for (thismask in 1:5){
+
+
+for (thismask in 2:4){
 mymask <- mask[thismask]
 mytitle <- paste0(str_to_title(mymask),": ",longtask)
 if(thismask==1){
@@ -412,7 +422,7 @@ if(thismask==1){
 
 mycount <- mycount+1 #used to count the plots
 
-xfile <- filter(bigdf,method==methodX & task==mytaskx & mask=='mca') #doppler only has mca equiv and only has pp1 and wg1
+xfile <- filter(bigdf,method==methodX & task==mytask & mask=='mca') #doppler only has mca equiv
 yfile <-  filter(bigdf,method==methodY & task==mytask & mask==mymask)
 
 
@@ -439,7 +449,7 @@ cortext <- paste0('r[s] = ',rs,'\n[',ci1,', ', ci2,']')
 
 
 myplot <- ggplot(data = forplot,aes(x = x,y = y)) + 
-  geom_point(aes(col='black'),size=1.5)+
+  geom_point(aes(col='black'),size=.5)+
   geom_errorbar(aes(ymin = ymin,ymax = ymax,col='black')) + 
   geom_errorbarh(aes(xmin = xmin,xmax = xmax,col='black'))+
   geom_hline(yintercept = 0, linetype="solid",col='grey') + 
@@ -457,28 +467,15 @@ allplot[[mycount]] = myplot
 }
 }
 
-myallplot <- ggarrange(allplot[[1]],allplot[[6]],allplot[[2]],allplot[[7]],allplot[[3]],
-                       allplot[[8]],allplot[[4]],allplot[[9]],allplot[[5]],allplot[[10]],nrow=5,ncol=2,common.legend=TRUE)
-savename<-paste0('Doppler_fmri2meth_5masks_',mytask,'.jpg')
+myallplot <- ggarrange(allplot[[1]],allplot[[4]],allplot[[2]],allplot[[5]],allplot[[3]],
+                       allplot[[6]],nrow=3,ncol=2,common.legend=TRUE)
+savename<-paste0('Doppler_fmri2meth_3masks_',mytask,'.jpg')
 
-ggsave(here('Plots',savename),myallplot,width=8,height=15,dpi=300)
+ggsave(here('maria_2024/Plots',savename),myallplot,width=8,height=15,dpi=300)
 
-#additional plots for powerpoint
-myplot1 <- ggarrange(allplot[[1]],allplot[[6]],nrow=1,ncol=2,common.legend=TRUE)
-savename<-paste0('Doppler_fmri2meth_MCA_',mytask,'.jpg')
 
-ggsave(here('Plots',savename),myplot1,width=6,height=4,dpi=300)
 
-#additional plots for powerpoint
-myplot2 <- ggarrange(allplot[[2]],allplot[[7]],allplot[[3]],allplot[[8]],nrow=2,ncol=2,common.legend=TRUE)
-savename<-paste0('Doppler_fmri2meth_fronttemp_',mytask,'.jpg')
 
-ggsave(here('Plots',savename),myplot2,width=6,height=6,dpi=300)
-
-myplot3 <- ggarrange(allplot[[4]],allplot[[9]],allplot[[5]],allplot[[10]],nrow=2,ncol=2,common.legend=TRUE)
-savename<-paste0('Doppler_fmri2meth_parcereb_',mytask,'.jpg')
-
-ggsave(here('Plots',savename),myplot3,width=6,height=6,dpi=300)
 }
 
 
