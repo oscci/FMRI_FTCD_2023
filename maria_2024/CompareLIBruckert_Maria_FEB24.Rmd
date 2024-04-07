@@ -22,6 +22,9 @@ When you run here(), the default directory for reading and writing becomes the p
 
 If you have other locations, you could set a directory name and then substitute that for cases where you see 'here(maria_2024/' at start of file read
 
+Update 7th April 2024:
+New GAM_summary.csv file from Maria: handedness corrected for BAN11 (had been miscoded as L hander) and  data added from BAN17 (data rejected from GAM analysis because of miscoding)
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 require(tidyverse)
@@ -229,10 +232,6 @@ Now we can look at some plots - start within task
 tryplot <- 1 #this flag can be set to zero so we can skip this step if need be
 if (tryplot==1){
  
-#remove BAN17 as missing data create issues
-  bigdf_all<-bigdf #save original
- # bigdf<-bigdf[bigdf$id!='BAN17',] #now remove BAN17 who has missing data that messes up plots
-
 #method options are "Doppler","mirror","toolbox" 
 mymethod <- c('Doppler','mirror','toolbox')
 #we select these by specifying 1, 2 or 3
@@ -481,3 +480,100 @@ ggsave(here('maria_2024/Plots',savename),myallplot,width=8,height=15,dpi=300)
 
 ```
 
+Just redoing earlier plot with cerebellar mask for fMRI, as we only have mirror method for this
+```{r tryplot}
+tryplot <- 1 #this flag can be set to zero so we can skip this step if need be
+if (tryplot==1){
+ 
+#method options are "Doppler","mirror","toolbox" 
+mymethod <- c('Doppler','mirror','toolbox')
+#we select these by specifying 1, 2 or 3
+methX <- 1
+methY <- 2
+methodX <- mymethod[methX]
+methodY <- mymethod[methY]
+methodlabel <- c('Doppler - rescaled','mirror - rescaled','LI toolbox')
+
+allplot <- list() #we'll save the plots in a list so we can flexibly reference them later with ggarrange
+mycount <-0
+for (thismask in 1){
+#for (thismask in 1:3){
+mymask <- 'frontal'
+
+tlist <- 1:6 # tasks to include: WG,SG,PD,WC,SC,SD
+for (t in tlist){
+mycount <- mycount+1
+mytask <- task[t]
+xfile <- filter(bigdf,method==methodX & task==mytask & mask=="mca")
+yfile <-  filter(bigdf,method==methodY & task==mytask & mask==mymask)
+#Check that rows are equivalent
+s<-c(xfile$id,yfile$id)
+myn<-table(s)
+my2 <- names(which(myn==2))
+xfile<-xfile[xfile$id %in% my2,]
+yfile <- yfile[yfile$id %in% my2,]
+w<-which(names(xfile)=='mean')
+names(xfile)[w:(w+2)]<-c('x','xmin','xmax')
+names(yfile)[w:(w+2)]<-c('y','ymin','ymax')
+
+forplot<-cbind(xfile,yfile[,w:(w+2)]) #bind x and y columns to make file for plotting
+
+correlcoef <- round(cor.test (forplot$x, forplot$y, method = "spearman",  exact = FALSE)$estimate,3)
+
+corspear <-spearman.ci(forplot$x,forplot$y, nrep = 1000, conf.level = 0.95)
+#correlcoef <- paste0('$r_s$ = ',correlcoef,' [',round(corspear$conf.int[1],3),', ',round(corspear$conf.int[2],3),']')
+text3 <-paste0('Spearman r: \n',correlcoef,' [',round(corspear$conf.int[1],3),', ',round(corspear$conf.int[2],3),']')
+
+forplot$colgroup= forplot$Doplat #assign for lat_group for colour contrast
+if(methX>1 && methY>1){forplot$colgroup <- "1"} #no col contrast if only fMRI (needs to be nonnumeric!)
+
+#out of range CIs mess up plot - set to limits
+forplot$xmin[forplot$xmin< (-1)]<- (-1)
+forplot$ymin[forplot$ymin< (-1)]<- (-1)
+forplot$xmax[forplot$xmax>1]<- 1
+forplot$ymax[forplot$ymax>1]<- 1
+
+myplot <- ggplot(data = forplot,aes(x = x,y = y)) + 
+  geom_point(aes(col=colgroup),size=.5)+
+  geom_errorbar(aes(ymin = ymin,ymax = ymax,col=colgroup)) + 
+  geom_errorbarh(aes(xmin = xmin,xmax = xmax,col=colgroup))+
+  geom_hline(yintercept = 0, linetype="solid",col='grey') + 
+  geom_vline(xintercept = 0, linetype= "solid", col='grey')  + 
+  xlab(methodlabel[methX])+
+  ylab(methodlabel[methY])+
+  lims(x= c(-1,1), y = c(-1,1))+
+  ggtitle(paste0(mymask,": ",mytask))+
+  annotate("text",x = -.5, y = .9, label = text3,col='black',size=3)+
+   theme(legend.position = "none")
+
+mylegend=FALSE
+if(methX==1 || methY==1){
+myplot <- myplot +
+  guides(col=guide_legend(title='Laterality category: fTCD WG'))
+  mylegend=TRUE
+}
+
+if(methX>1 && methY>1){
+myplot <- myplot +
+   scale_color_manual(values = "blue") #just use blue points if plotting only fMRI
+}
+
+allplot[[mycount]] <- myplot
+}
+if(length(allplot)==3){
+myallplot <- ggarrange(allplot[[1]],allplot[[3]],allplot[[2]],ncol=3,nrow=1,common.legend=mylegend)
+savename<-paste0(methodX,'_',methodY,'_3tasks_',mymask,'.jpg')
+}
+if(length(allplot)==2){
+myallplot <- ggarrange(allplot[[1]],allplot[[2]],ncol=2,nrow=1,common.legend=mylegend)
+savename<-paste0(methodX,'_',methodY,'_2tasks_',mymask,'.jpg')
+}
+if(length(allplot)==6){
+myallplot <- ggarrange(allplot[[1]],allplot[[2]],allplot[[3]],allplot[[4]],allplot[[5]],allplot[[6]],ncol=2,nrow=3,common.legend=mylegend)
+savename<-paste0(methodX,'_',methodY,'_6tasks_',mymask,'.jpg')
+}
+ggsave(here('maria_2024/Plots',savename),myallplot,width=8,height=9,dpi=300)
+}
+
+}
+```
